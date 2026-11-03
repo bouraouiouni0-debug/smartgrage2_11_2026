@@ -42,8 +42,8 @@ input{width:100%;padding:14px;margin-top:10px;border:none;border-radius:8px;font
 </div>
 </div>
 <div class="card">
-  <h3>🔢 COUNTER 0 → 10</h3>
-  <button onclick="sendCounter()">SEND COUNTER</button>
+  <h3>🔢 COUNTER 0 → 10 (automatique)</h3>
+  <div id="counterValue" style="font-size:40px;text-align:center;margin-top:10px">0</div>
 </div>
   
 <script>
@@ -106,22 +106,26 @@ async function receiveMessages() {
   } catch (e) {}
 }
 setInterval(receiveMessages, 1000);
-  async function sendCounter() {
-  for (let i = 0; i <= 10; i++) {
-    try {
-      await fetch("/api/send", {
-        method: "POST",
-        headers: H,
-        body: JSON.stringify({ msg: String(i) })
-      });
-      addMessage("COUNTER: " + i, "sent");
-    } catch (e) {
-      addMessage("Erreur : " + e.message, "received");
+  let counter = 0;
+
+async function autoCounter() {
+  try {
+    const r = await fetch("/api/send", {
+      method: "POST",
+      headers: H,
+      body: JSON.stringify({ msg: String(counter) })
+    });
+    if (r.status === 401) {                 // mauvais mot de passe : on arrête
+      clearInterval(counterTimer);
+      sessionStorage.removeItem("k");
       return;
     }
-    await new Promise(r => setTimeout(r, 1000));   // 1 seconde entre chaque nombre
-  }
+    document.getElementById("counterValue").textContent = counter;
+    counter = (counter >= 10) ? 0 : counter + 1;   // retour à 0 après 10
+  } catch (e) {}
 }
+
+const counterTimer = setInterval(autoCounter, 1000);   // un nombre par seconde
 </script>
 </body>
 </html>
