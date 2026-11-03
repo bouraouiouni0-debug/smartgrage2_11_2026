@@ -64,5 +64,9 @@ app.post("/api/esp/photo", espAuth, express.raw({ type: "image/jpeg", limit: "3m
   state.photoTime = Date.now();
   res.sendStatus(200);
 });
-
+app.get("/api/photo-debug", (req, res) => {
+  if (req.query.key !== USER_KEY) return res.sendStatus(401);
+  if (!state.photo) return res.status(404).send("Aucune photo en mémoire");
+  res.set("Cache-Control", "no-store").type("image/jpeg").send(state.photo);
+});
 app.listen(process.env.PORT || 3000, () => console.log("Serveur démarré"));
