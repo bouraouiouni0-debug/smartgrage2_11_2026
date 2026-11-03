@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 
 const ESP_KEY = process.env.ESP_KEY || "esp-secret";    // clé de l'ESP32
-const USER_KEY = process.env.USER_KEY || "user-secret"; // mot de passe de la page
+const USER_KEY = process.env.USER_KEY || "user1234"; // mot de passe de la page
 
 const state = { toEsp: [], fromEsp: [], capture: false, photo: null, photoTime: 0 };
 
