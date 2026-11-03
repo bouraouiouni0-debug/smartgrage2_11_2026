@@ -41,7 +41,11 @@ input{width:100%;padding:14px;margin-top:10px;border:none;border-radius:8px;font
   <div id="messages"></div>
 </div>
 </div>
-
+<div class="card">
+  <h3>🔢 COUNTER 0 → 10</h3>
+  <button onclick="sendCounter()">SEND COUNTER</button>
+</div>
+  
 <script>
 let KEY = sessionStorage.getItem("k");
 if (!KEY) { KEY = prompt("Mot de passe :"); sessionStorage.setItem("k", KEY); }
@@ -102,6 +106,22 @@ async function receiveMessages() {
   } catch (e) {}
 }
 setInterval(receiveMessages, 1000);
+  async function sendCounter() {
+  for (let i = 0; i <= 10; i++) {
+    try {
+      await fetch("/api/send", {
+        method: "POST",
+        headers: H,
+        body: JSON.stringify({ msg: String(i) })
+      });
+      addMessage("COUNTER: " + i, "sent");
+    } catch (e) {
+      addMessage("Erreur : " + e.message, "received");
+      return;
+    }
+    await new Promise(r => setTimeout(r, 1000));   // 1 seconde entre chaque nombre
+  }
+}
 </script>
 </body>
 </html>
