@@ -13,7 +13,7 @@ const espAuth = (req, res, next) =>
   req.headers["x-api-key"] === ESP_KEY ? next() : res.sendStatus(401);
 const userAuth = (req, res, next) =>
   req.headers["x-user-key"] === USER_KEY ? next() : res.sendStatus(401);
-
+app.get("/api/check", userAuth, (req, res) => res.json({ ok: true }));
 // ---------- Navigateur -> serveur ----------
 app.post("/api/send", userAuth, (req, res) => {
   const msg = String(req.body.msg || "").replace(/[\r\n]+/g, " ").slice(0, 300);
