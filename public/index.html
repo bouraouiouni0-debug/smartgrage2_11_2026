@@ -18,21 +18,9 @@ input{width:100%;padding:14px;margin-top:10px;border:none;border-radius:8px;font
 .msg{padding:10px;margin-bottom:8px;background:#334155;border-radius:7px}
 .sent{border-left:4px solid #38bdf8}
 .received{border-left:4px solid #4ade80}
-#app{display:none}
-#denied{display:none;max-width:400px;margin:80px auto;text-align:center}
-#denied h2{color:#f87171}
 </style>
 </head>
 <body>
-
-<!-- Affiché si le mot de passe est faux -->
-<div id="denied">
-  <h2>🔒 Mot de passe incorrect</h2>
-  <button onclick="login()">Réessayer</button>
-</div>
-
-<!-- Cachée tant que le mot de passe n'est pas validé -->
-<div id="app">
 <div class="container">
 <h1>ESP32-CAM CONTROL</h1>
 
@@ -49,50 +37,19 @@ input{width:100%;padding:14px;margin-top:10px;border:none;border-radius:8px;font
 </div>
 
 <div class="card">
-  <h3>🔢 COUNTER 0 → 10 (automatique)</h3>
-  <div id="counterValue" style="font-size:40px;text-align:center;margin-top:10px">0</div>
-</div>
-
-<div class="card">
   <h3>📥 RECEIVE MESSAGES FROM ESP32</h3>
   <div id="messages"></div>
 </div>
 </div>
+<div class="card">
+  <h3>🔢 COUNTER 0 → 10 (automatique)</h3>
+  <div id="counterValue" style="font-size:40px;text-align:center;margin-top:10px">0</div>
 </div>
-
+  
 <script>
-let H = {};
-let started = false;
-
-// Vérifie une clé auprès du serveur
-async function checkKey(k) {
-  try {
-    const r = await fetch("/api/check", { headers: { "x-user-key": k } });
-    return r.ok;
-  } catch (e) {
-    return false;
-  }
-}
-
-function grantAccess(k) {
-  H = { "Content-Type": "application/json", "x-user-key": k };
-  sessionStorage.setItem("k", k);
-  document.getElementById("denied").style.display = "none";
-  document.getElementById("app").style.display = "block";
-  start();
-}
-
-function showDenied() {
-  sessionStorage.removeItem("k");
-  document.getElementById("app").style.display = "none";
-  document.getElementById("denied").style.display = "block";
-}
-
-async function login() {
-  const k = prompt("Mot de passe :");
-  if (k !== null && await checkKey(k)) grantAccess(k);
-  else showDenied();
-}
+let KEY = sessionStorage.getItem("k");
+if (!KEY) { KEY = prompt("Mot de passe :"); sessionStorage.setItem("k", KEY); }
+const H = { "Content-Type": "application/json", "x-user-key": KEY };
 
 function addMessage(text, type) {
   const d = document.createElement("div");
@@ -106,29 +63,19 @@ function addMessage(text, type) {
 async function takePhoto() {
   addMessage("Photo demandée...", "sent");
   try {
-    const rt = await fetch("/api/photo-time", { headers: H });
-    if (!rt.ok) { addMessage("Erreur photo-time : " + rt.status, "received"); return; }
-    const before = (await rt.json()).t;
-
+    const before = (await (await fetch("/api/photo-time", { headers: H })).json()).t;
     await fetch("/api/capture", { method: "POST", headers: H });
-
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 30; i++) {            // attend jusqu'à ~30 s
       await new Promise(r => setTimeout(r, 1000));
-      const r2 = await fetch("/api/photo-time", { headers: H });
-      if (!r2.ok) continue;
-      const t = (await r2.json()).t;
+      const t = (await (await fetch("/api/photo-time", { headers: H })).json()).t;
       if (t !== before) {
-        const rp = await fetch("/api/photo?t=" + t, { headers: H });
-        if (!rp.ok) { addMessage("Erreur /api/photo : " + rp.status, "received"); return; }
-        const blob = await rp.blob();
-        addMessage("Photo reçue : " + blob.size + " octets, type " + blob.type, "received");
-
+        const blob = await (await fetch("/api/photo?t=" + t, { headers: H })).blob();
         const img = document.getElementById("photo");
-        img.onerror = () => addMessage("Image illisible (JPEG corrompu)", "received");
         if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
         img.dataset.url = URL.createObjectURL(blob);
         img.src = img.dataset.url;
         img.style.display = "block";
+        addMessage("Photo reçue !", "received");
         return;
       }
     }
@@ -154,12 +101,13 @@ document.getElementById("messageInput").addEventListener("keydown", e => {
 async function receiveMessages() {
   try {
     const r = await fetch("/api/messages", { headers: H });
-    if (!r.ok) return;
+    if (r.status === 401) { sessionStorage.removeItem("k"); return; }
     (await r.json()).forEach(m => addMessage("ESP32: " + m, "received"));
   } catch (e) {}
 }
+setInterval(receiveMessages, 1000);
+  let counter = 0;
 
-let counter = 0;
 async function autoCounter() {
   try {
     const r = await fetch("/api/send", {
@@ -167,26 +115,17 @@ async function autoCounter() {
       headers: H,
       body: JSON.stringify({ msg: String(counter) })
     });
-    if (!r.ok) return;
+    if (r.status === 401) {                 // mauvais mot de passe : on arrête
+      clearInterval(counterTimer);
+      sessionStorage.removeItem("k");
+      return;
+    }
     document.getElementById("counterValue").textContent = counter;
     counter = (counter >= 10) ? 0 : counter + 1;   // retour à 0 après 10
   } catch (e) {}
 }
 
-// Les boucles ne démarrent qu'après un mot de passe correct
-function start() {
-  if (started) return;
-  started = true;
-  setInterval(receiveMessages, 1000);
-  setInterval(autoCounter, 1000);
-}
-
-// Au chargement : réutilise la clé de l'onglet si elle est valide, sinon demande le mot de passe
-(async function init() {
-  const saved = sessionStorage.getItem("k");
-  if (saved && await checkKey(saved)) grantAccess(saved);
-  else login();
-})();
+const counterTimer = setInterval(autoCounter, 1000);   // un nombre par seconde
 </script>
 </body>
 </html>
