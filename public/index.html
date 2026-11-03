@@ -18,9 +18,21 @@ input{width:100%;padding:14px;margin-top:10px;border:none;border-radius:8px;font
 .msg{padding:10px;margin-bottom:8px;background:#334155;border-radius:7px}
 .sent{border-left:4px solid #38bdf8}
 .received{border-left:4px solid #4ade80}
+#app{display:none}
+#denied{display:none;max-width:400px;margin:80px auto;text-align:center}
+#denied h2{color:#f87171}
 </style>
 </head>
 <body>
+
+<!-- Affiché si le mot de passe est faux -->
+<div id="denied">
+  <h2>🔒 Mot de passe incorrect</h2>
+  <button onclick="login()">Réessayer</button>
+</div>
+
+<!-- Cachée tant que le mot de passe n'est pas validé -->
+<div id="app">
 <div class="container">
 <h1>ESP32-CAM CONTROL</h1>
 
@@ -37,19 +49,50 @@ input{width:100%;padding:14px;margin-top:10px;border:none;border-radius:8px;font
 </div>
 
 <div class="card">
+  <h3>🔢 COUNTER 0 → 10 (automatique)</h3>
+  <div id="counterValue" style="font-size:40px;text-align:center;margin-top:10px">0</div>
+</div>
+
+<div class="card">
   <h3>📥 RECEIVE MESSAGES FROM ESP32</h3>
   <div id="messages"></div>
 </div>
 </div>
-<div class="card">
-  <h3>🔢 COUNTER 0 → 10 (automatique)</h3>
-  <div id="counterValue" style="font-size:40px;text-align:center;margin-top:10px">0</div>
 </div>
-  
+
 <script>
-let KEY = sessionStorage.getItem("k");
-if (!KEY) { KEY = prompt("Mot de passe :"); sessionStorage.setItem("k", KEY); }
-const H = { "Content-Type": "application/json", "x-user-key": KEY };
+let H = {};
+let started = false;
+
+// Vérifie une clé auprès du serveur
+async function checkKey(k) {
+  try {
+    const r = await fetch("/api/check", { headers: { "x-user-key": k } });
+    return r.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+function grantAccess(k) {
+  H = { "Content-Type": "application/json", "x-user-key": k };
+  sessionStorage.setItem("k", k);
+  document.getElementById("denied").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  start();
+}
+
+function showDenied() {
+  sessionStorage.removeItem("k");
+  document.getElementById("app").style.display = "none";
+  document.getElementById("denied").style.display = "block";
+}
+
+async function login() {
+  const k = prompt("Mot de passe :");
+  if (k !== null && await checkKey(k)) grantAccess(k);
+  else showDenied();
+}
 
 function addMessage(text, type) {
   const d = document.createElement("div");
@@ -101,13 +144,12 @@ document.getElementById("messageInput").addEventListener("keydown", e => {
 async function receiveMessages() {
   try {
     const r = await fetch("/api/messages", { headers: H });
-    if (r.status === 401) { sessionStorage.removeItem("k"); return; }
+    if (!r.ok) return;
     (await r.json()).forEach(m => addMessage("ESP32: " + m, "received"));
   } catch (e) {}
 }
-setInterval(receiveMessages, 1000);
-  let counter = 0;
 
+let counter = 0;
 async function autoCounter() {
   try {
     const r = await fetch("/api/send", {
@@ -115,17 +157,26 @@ async function autoCounter() {
       headers: H,
       body: JSON.stringify({ msg: String(counter) })
     });
-    if (r.status === 401) {                 // mauvais mot de passe : on arrête
-      clearInterval(counterTimer);
-      sessionStorage.removeItem("k");
-      return;
-    }
+    if (!r.ok) return;
     document.getElementById("counterValue").textContent = counter;
     counter = (counter >= 10) ? 0 : counter + 1;   // retour à 0 après 10
   } catch (e) {}
 }
 
-const counterTimer = setInterval(autoCounter, 1000);   // un nombre par seconde
+// Les boucles ne démarrent qu'après un mot de passe correct
+function start() {
+  if (started) return;
+  started = true;
+  setInterval(receiveMessages, 1000);
+  setInterval(autoCounter, 1000);
+}
+
+// Au chargement : réutilise la clé de l'onglet si elle est valide, sinon demande le mot de passe
+(async function init() {
+  const saved = sessionStorage.getItem("k");
+  if (saved && await checkKey(saved)) grantAccess(saved);
+  else login();
+})();
 </script>
 </body>
 </html>
