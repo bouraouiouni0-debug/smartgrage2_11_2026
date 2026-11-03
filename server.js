@@ -1,8 +1,8 @@
 const express = require("express");
 const app = express();
 
-const ESP_KEY = process.env.ESP_KEY || "esp-secret";    // clé de l'ESP32
-const USER_KEY = process.env.USER_KEY || "user1234";
+const ESP_KEY = process.env.ESP_KEY || "esp1234";     // clé de l'ESP32
+const USER_KEY = process.env.USER_KEY || "user1234";  // mot de passe de la page
 
 const state = { toEsp: [], fromEsp: [], capture: false, photo: null, photoTime: 0 };
 
@@ -13,7 +13,10 @@ const espAuth = (req, res, next) =>
   req.headers["x-api-key"] === ESP_KEY ? next() : res.sendStatus(401);
 const userAuth = (req, res, next) =>
   req.headers["x-user-key"] === USER_KEY ? next() : res.sendStatus(401);
+
+// ---------- Vérification du mot de passe ----------
 app.get("/api/check", userAuth, (req, res) => res.json({ ok: true }));
+
 // ---------- Navigateur -> serveur ----------
 app.post("/api/send", userAuth, (req, res) => {
   const msg = String(req.body.msg || "").replace(/[\r\n]+/g, " ").slice(0, 300);
@@ -54,6 +57,9 @@ app.post("/api/esp/message", espAuth, express.text({ limit: "10kb" }), (req, res
 });
 
 app.post("/api/esp/photo", espAuth, express.raw({ type: "image/jpeg", limit: "3mb" }), (req, res) => {
+  const ok = Buffer.isBuffer(req.body) && req.body.length > 0;
+  console.log("Photo reçue :", ok ? req.body.length : "invalide", "octets");
+  if (!ok) return res.sendStatus(400);
   state.photo = req.body;
   state.photoTime = Date.now();
   res.sendStatus(200);
