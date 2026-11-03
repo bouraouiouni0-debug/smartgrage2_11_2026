@@ -18,9 +18,19 @@ input{width:100%;padding:14px;margin-top:10px;border:none;border-radius:8px;font
 .msg{padding:10px;margin-bottom:8px;background:#334155;border-radius:7px}
 .sent{border-left:4px solid #38bdf8}
 .received{border-left:4px solid #4ade80}
+#app{display:none}
+#denied{display:none;max-width:400px;margin:80px auto;text-align:center}
+#denied h2{color:#f87171}
 </style>
 </head>
 <body>
+
+<div id="denied">
+  <h2>🔒 Mot de passe incorrect</h2>
+  <button onclick="login()">Réessayer</button>
+</div>
+
+<div id="app">
 <div class="container">
 <h1>ESP32-CAM CONTROL</h1>
 
@@ -37,95 +47,52 @@ input{width:100%;padding:14px;margin-top:10px;border:none;border-radius:8px;font
 </div>
 
 <div class="card">
+  <h3>🔢 COUNTER 0 → 10 (automatique)</h3>
+  <div id="counterValue" style="font-size:40px;text-align:center;margin-top:10px">0</div>
+</div>
+
+<div class="card">
   <h3>📥 RECEIVE MESSAGES FROM ESP32</h3>
   <div id="messages"></div>
 </div>
 </div>
-<div class="card">
-  <h3>🔢 COUNTER 0 → 10 (automatique)</h3>
-  <div id="counterValue" style="font-size:40px;text-align:center;margin-top:10px">0</div>
 </div>
-  
+
 <script>
-let KEY = sessionStorage.getItem("k");
-if (!KEY) { KEY = prompt("Mot de passe :"); sessionStorage.setItem("k", KEY); }
-const H = { "Content-Type": "application/json", "x-user-key": KEY };
+let H = {};
+let started = false;
+
+async function checkKey(k) {
+  try {
+    const r = await fetch("/api/check", { headers: { "x-user-key": k } });
+    return r.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+function grantAccess(k) {
+  H = { "Content-Type": "application/json", "x-user-key": k };
+  sessionStorage.setItem("k", k);
+  document.getElementById("denied").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  start();
+}
+
+function showDenied() {
+  sessionStorage.removeItem("k");
+  document.getElementById("app").style.display = "none";
+  document.getElementById("denied").style.display = "block";
+}
+
+async function login() {
+  const k = prompt("Mot de passe :");
+  if (k !== null && await checkKey(k)) grantAccess(k);
+  else showDenied();
+}
 
 function addMessage(text, type) {
   const d = document.createElement("div");
   d.className = "msg " + type;
   d.textContent = text;
-  const box = document.getElementById("messages");
-  box.appendChild(d);
-  box.scrollTop = box.scrollHeight;
-}
-
-async function takePhoto() {
-  addMessage("Photo demandée...", "sent");
-  try {
-    const before = (await (await fetch("/api/photo-time", { headers: H })).json()).t;
-    await fetch("/api/capture", { method: "POST", headers: H });
-    for (let i = 0; i < 30; i++) {            // attend jusqu'à ~30 s
-      await new Promise(r => setTimeout(r, 1000));
-      const t = (await (await fetch("/api/photo-time", { headers: H })).json()).t;
-      if (t !== before) {
-        const blob = await (await fetch("/api/photo?t=" + t, { headers: H })).blob();
-        const img = document.getElementById("photo");
-        if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
-        img.dataset.url = URL.createObjectURL(blob);
-        img.src = img.dataset.url;
-        img.style.display = "block";
-        addMessage("Photo reçue !", "received");
-        return;
-      }
-    }
-    addMessage("Pas de réponse de l'ESP32", "received");
-  } catch (e) { addMessage("Erreur photo : " + e.message, "received"); }
-}
-
-async function sendMessage() {
-  const input = document.getElementById("messageInput");
-  const msg = input.value.trim();
-  if (!msg) return;
-  try {
-    await fetch("/api/send", { method: "POST", headers: H, body: JSON.stringify({ msg }) });
-    addMessage("YOU: " + msg, "sent");
-    input.value = "";
-  } catch (e) { addMessage("Erreur : " + e.message, "received"); }
-}
-
-document.getElementById("messageInput").addEventListener("keydown", e => {
-  if (e.key === "Enter") sendMessage();
-});
-
-async function receiveMessages() {
-  try {
-    const r = await fetch("/api/messages", { headers: H });
-    if (r.status === 401) { sessionStorage.removeItem("k"); return; }
-    (await r.json()).forEach(m => addMessage("ESP32: " + m, "received"));
-  } catch (e) {}
-}
-setInterval(receiveMessages, 1000);
-  let counter = 0;
-
-async function autoCounter() {
-  try {
-    const r = await fetch("/api/send", {
-      method: "POST",
-      headers: H,
-      body: JSON.stringify({ msg: String(counter) })
-    });
-    if (r.status === 401) {                 // mauvais mot de passe : on arrête
-      clearInterval(counterTimer);
-      sessionStorage.removeItem("k");
-      return;
-    }
-    document.getElementById("counterValue").textContent = counter;
-    counter = (counter >= 10) ? 0 : counter + 1;   // retour à 0 après 10
-  } catch (e) {}
-}
-
-const counterTimer = setInterval(autoCounter, 1000);   // un nombre par seconde
-</script>
-</body>
-</html>
+  const box =
