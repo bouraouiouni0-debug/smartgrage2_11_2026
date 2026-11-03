@@ -106,19 +106,29 @@ function addMessage(text, type) {
 async function takePhoto() {
   addMessage("Photo demandée...", "sent");
   try {
-    const before = (await (await fetch("/api/photo-time", { headers: H })).json()).t;
+    const rt = await fetch("/api/photo-time", { headers: H });
+    if (!rt.ok) { addMessage("Erreur photo-time : " + rt.status, "received"); return; }
+    const before = (await rt.json()).t;
+
     await fetch("/api/capture", { method: "POST", headers: H });
-    for (let i = 0; i < 30; i++) {            // attend jusqu'à ~30 s
+
+    for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 1000));
-      const t = (await (await fetch("/api/photo-time", { headers: H })).json()).t;
+      const r2 = await fetch("/api/photo-time", { headers: H });
+      if (!r2.ok) continue;
+      const t = (await r2.json()).t;
       if (t !== before) {
-        const blob = await (await fetch("/api/photo?t=" + t, { headers: H })).blob();
+        const rp = await fetch("/api/photo?t=" + t, { headers: H });
+        if (!rp.ok) { addMessage("Erreur /api/photo : " + rp.status, "received"); return; }
+        const blob = await rp.blob();
+        addMessage("Photo reçue : " + blob.size + " octets, type " + blob.type, "received");
+
         const img = document.getElementById("photo");
+        img.onerror = () => addMessage("Image illisible (JPEG corrompu)", "received");
         if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
         img.dataset.url = URL.createObjectURL(blob);
         img.src = img.dataset.url;
         img.style.display = "block";
-        addMessage("Photo reçue !", "received");
         return;
       }
     }
